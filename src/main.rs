@@ -103,3 +103,22 @@ fn get_os_name() -> String {
     }
     "Linux".to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_os_name() {
+        let os_name = get_os_name();
+        assert!(!os_name.is_empty(), "OS name should not be empty");
+    }
+
+    #[test]
+    fn test_get_window_manager_from_ps() {
+        let wm_result = get_window_manager_from_ps();
+        assert!(wm_result.is_ok(), "Should find a window manager");
+    }
+
+    // You can also test the other parts of your program similarly.
+}

@@ -4,4 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-uname = "0.1"
+uname = { version = "0.1.1", default-features = false }
+
+[profile.release]
+opt-level = "z"
+lto = true 
+debug = false
