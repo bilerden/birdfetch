@@ -76,20 +76,34 @@ fn print_color_blocks() {
 }
 
 fn get_window_manager_from_ps() -> Result<String, std::io::Error> {
+    if let Ok(wmctrl_output) = StdCommand::new("wmctrl")
+        .arg("-m")
+        .output() {
+        let wm_name = String::from_utf8_lossy(&wmctrl_output.stdout);
+        if !wm_name.is_empty() {
+            return Ok(wm_name.trim().to_string());
+        }
+    }
+
     let output = StdCommand::new("ps")
         .arg("ax")
         .arg("-o")
         .arg("comm=")
         .stdout(Stdio::piped())
         .output()?;
-        
-    let wm_processes = vec!["i3", "gnome-shell", "xfwm4", "kwin_x11", "awesome", "openbox"];
+
+    let wm_processes = vec![
+        "i3", "gnome-shell", "xfwm4", "kwin_x11", "awesome", "openbox", "sway", "bspwm", 
+        "xmonad", "cinnamon", "mate-session", "fluxbox", "dwm", "herbstluftwm", "stumpwm"
+    ];
+
     String::from_utf8_lossy(&output.stdout)
         .lines()
         .find(|line| wm_processes.iter().any(|&wm| line.contains(wm)))
         .map(|wm| wm.to_string())
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Window Manager not found"))
 }
+
 
 fn get_os_name() -> String {
     if let Ok(content) = fs::read_to_string("/etc/os-release") {
