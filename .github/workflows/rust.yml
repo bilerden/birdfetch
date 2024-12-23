@@ -3,7 +3,10 @@ name: Rust CI
 on:
   push:
     branches:
-      - main
+      - 'main'
+      - '*test*'
+    tags:
+      - 'v*'
   pull_request:
     branches:
       - main
@@ -32,3 +35,24 @@ jobs:
         run: |
           cargo build --verbose
           cargo test --verbose
+
+      - name: Build the release binary
+        run: |
+          cargo build --release
+
+      - name: Create GitHub Release and Upload Binary
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            target/release/birdfetch-${GITHUB_REF##*/}
+
+      - name: Upload binary to GitHub Releases
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION=${GITHUB_REF##*/}
+          mv target/release/birdfetch target/release/birdfetch-${VERSION}
+          echo "Binary name: birdfetch-${VERSION}"
+          gh release create "v${VERSION}" target/release/birdfetch-${VERSION} --title "Release v${VERSION}" --notes "Release notes for v${VERSION}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
