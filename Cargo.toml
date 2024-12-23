@@ -1,0 +1,7 @@
+[package]
+name = "birdfetch"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+uname = "0.1"
