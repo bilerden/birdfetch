@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 sys-info = "0.9.1"
+atty = "0.2"
 
 [profile.release]
 opt-level = "z"

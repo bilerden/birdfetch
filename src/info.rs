@@ -78,6 +78,56 @@ pub fn get_terminal() -> String {
     env::var("TERM_PROGRAM").or_else(|_| env::var("TERM")).unwrap_or_else(|_| "Unknown terminal".to_string())
 }
 
+/// Returns memory usage as used/total MB.
+pub fn get_mem_usage() -> String {
+    match sys_info::mem_info() {
+        Ok(mem) => {
+            let total_mb = mem.total / 1024;
+            let avail_mb = mem.avail / 1024;
+            let used_mb = total_mb - avail_mb;
+            format!("Mem {} / {} MB", used_mb, total_mb)
+        }
+        Err(_) => "Mem Unknown".to_string(),
+    }
+}
+
+/// Returns load average for 1, 5, and 15 minutes.
+pub fn get_load_avg() -> String {
+    match sys_info::loadavg() {
+        Ok(load) => format!("Load {:.2} {:.2} {:.2}", load.one, load.five, load.fifteen),
+        Err(_) => "Load Unknown".to_string(),
+    }
+}
+
+/// Returns system uptime (Linux: /proc/uptime, else Unknown).
+pub fn get_uptime() -> String {
+    if let Ok(content) = fs::read_to_string("/proc/uptime") {
+        if let Some(sec_str) = content.split_whitespace().next() {
+            if let Ok(secs_f) = sec_str.parse::<f64>() {
+                let secs = secs_f as u64;
+                let days = secs / 86400;
+                let hours = (secs % 86400) / 3600;
+                let mins = (secs % 3600) / 60;
+                return format!("Uptime {}d {:02}h {:02}m", days, hours, mins);
+            }
+        }
+    }
+    "Uptime Unknown".to_string()
+}
+
+/// Returns disk usage as used/total GB.
+pub fn get_disk_info() -> String {
+    match sys_info::disk_info() {
+        Ok(disk) => {
+            let total_gb = disk.total / (1024 * 1024);
+            let free_gb = disk.free / (1024 * 1024);
+            let used_gb = total_gb - free_gb;
+            format!("Disk {} / {} GB", used_gb, total_gb)
+        }
+        Err(_) => "Disk Unknown".to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

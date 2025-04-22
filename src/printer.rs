@@ -1,3 +1,5 @@
+use atty::Stream;
+
 pub const FOOTER_COLOR: &str = "\x1b[31m\x1b[0m";
 const RESET_COLOR: &str = "\x1b[0m";
 
@@ -15,20 +17,32 @@ const OWL_ART: &str = r#"
 -"-"--
 "#;
 
-/// Wraps text in the given color with reset.
+/// Wraps text in the given color if stdout is a TTY.
 pub fn colorize(text: &str, color: &str) -> String {
-    format!("{}{}{}", color, text, RESET_COLOR)
+    if atty::is(Stream::Stdout) {
+        format!("{}{}{}", color, text, RESET_COLOR)
+    } else {
+        text.to_string()
+    }
 }
 
-/// Prints the owl ASCII art with aligned info lines.
+/// Prints the owl ASCII art with aligned info lines, and additional info below.
 pub fn print_owl(info: Vec<String>) {
     let lines = OWL_ART.lines().collect::<Vec<&str>>();
-    for (i, line) in lines.iter().enumerate() {
+    let width = 20;
+    let mut i = 0;
+    for line in &lines {
         if i < info.len() {
-            println!("{:<20} {}", line, info[i]);
+            println!("{:<w$} {}", line, info[i], w = width);
         } else {
             println!("{}", line);
         }
+        i += 1;
+    }
+    // print remaining info entries
+    while i < info.len() {
+        println!("{:<w$} {}", "", info[i], w = width);
+        i += 1;
     }
 }
 
