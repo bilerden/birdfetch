@@ -2,6 +2,7 @@ use std::env;
 use std::fs;
 use uname::uname;
 use std::process::{Command as StdCommand, Stdio};
+use std::thread;
 
 static FOOTER_COLOR: &str = "\x1b[31m\x1b[0m"; 
 static RESET_COLOR: &str = "\x1b[0m"; 
@@ -15,32 +16,53 @@ const OWL_ART: &str = r#"
 
 fn main() {
     let env_color = env::var("ANSI_COLOR").unwrap_or_else(|_| "".to_string());
+    let default_os_color = if !env_color.is_empty() {
+        env_color.clone()
+    } else {
+        "\x1b[32m".to_string()
+    };
 
-    let user = env::var("USER").unwrap_or_else(|_| "unknown_user".to_string());
-    let hostname = StdCommand::new("hostname")
-        .output()
-        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
-        .unwrap_or_else(|_| "unknown_host".to_string());
-    let title = format!("\x1b[31m{}@{}\x1b[0m", user, hostname);
-
-    let os_info = format!(
-        "{}OS\x1b[0m {}{}",
-        if !env_color.is_empty() {
-            env_color
-        } else {
-            "\x1b[32m".to_string()
-        },
-        get_os_name(),
-        "\x1b[37m"
+    let user_handle = thread::spawn(|| env::var("USER").unwrap_or_else(|_| "unknown_user".to_string()));
+    let hostname_handle = thread::spawn(||
+        StdCommand::new("hostname")
+            .output()
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+            .unwrap_or_else(|_| "unknown_host".to_string())
     );
-    
-    let kernel_info = format!("\x1b[33mKernel\x1b[0m \x1b[37m{}", uname().map(|u| u.release).unwrap_or_else(|_| "Unknown kernel".to_string()));
-    
-    let shell_info = format!("\x1b[34mShell\x1b[0m \x1b[37m{}", env::var("SHELL").unwrap_or_else(|_| "Unknown shell".to_string()).strip_prefix("/usr/bin/").unwrap_or("Unknown shell"));
-    
-    let wm_info = format!("\x1b[35mWM\x1b[0m \x1b[37m{}", env::var("XDG_SESSION_DESKTOP").or_else(|_| get_window_manager_from_ps()).unwrap_or_else(|_| "Unknown WM".to_string()));
-    
-    let terminal_info = format!("\x1b[36mTerminal\x1b[0m \x1b[37m{}", env::var("TERM_PROGRAM").or_else(|_| env::var("TERM")).unwrap_or_else(|_| "Unknown terminal".to_string()));
+    let os_handle = thread::spawn(|| get_os_name());
+    let kernel_handle = thread::spawn(|| uname().map(|u| u.release).unwrap_or_else(|_| "Unknown kernel".to_string()));
+    let shell_handle = thread::spawn(||
+        env::var("SHELL")
+            .unwrap_or_else(|_| "Unknown shell".to_string())
+            .strip_prefix("/usr/bin/")
+            .unwrap_or("Unknown shell")
+            .to_string()
+    );
+    let wm_handle = thread::spawn(||
+        env::var("XDG_SESSION_DESKTOP")
+            .or_else(|_| get_window_manager_from_ps())
+            .unwrap_or_else(|_| "Unknown WM".to_string())
+    );
+    let term_handle = thread::spawn(||
+        env::var("TERM_PROGRAM")
+            .or_else(|_| env::var("TERM"))
+            .unwrap_or_else(|_| "Unknown terminal".to_string())
+    );
+
+    let user = user_handle.join().unwrap();
+    let hostname = hostname_handle.join().unwrap();
+    let os_name = os_handle.join().unwrap();
+    let kernel_rel = kernel_handle.join().unwrap();
+    let shell = shell_handle.join().unwrap();
+    let wm = wm_handle.join().unwrap();
+    let terminal = term_handle.join().unwrap();
+
+    let title = format!("\x1b[31m{}@{}\x1b[0m", user, hostname);
+    let os_info = format!("{}OS\x1b[0m \x1b[37m{}", default_os_color, os_name);
+    let kernel_info = format!("\x1b[33mKernel\x1b[0m \x1b[37m{}", kernel_rel);
+    let shell_info = format!("\x1b[34mShell\x1b[0m \x1b[37m{}", shell);
+    let wm_info = format!("\x1b[35mWM\x1b[0m \x1b[37m{}", wm);
+    let terminal_info = format!("\x1b[36mTerminal\x1b[0m \x1b[37m{}", terminal);
 
     print_owl(title, os_info, kernel_info, shell_info, wm_info, terminal_info);
     println!("{}", FOOTER_COLOR);
@@ -103,7 +125,6 @@ fn get_window_manager_from_ps() -> Result<String, std::io::Error> {
         .map(|wm| wm.to_string())
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Window Manager not found"))
 }
-
 
 fn get_os_name() -> String {
     if let Ok(content) = fs::read_to_string("/etc/os-release") {
