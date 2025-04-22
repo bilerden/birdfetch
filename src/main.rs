@@ -1,53 +1,26 @@
+mod info;
+mod printer;
+
 use std::env;
-use std::fs;
-use uname::uname;
-use std::process::{Command as StdCommand, Stdio};
 use std::thread;
-
-static FOOTER_COLOR: &str = "\x1b[31m\x1b[0m"; 
-static RESET_COLOR: &str = "\x1b[0m"; 
-
-const OWL_ART: &str = r#"
- ^ ^
-(O,O)
-(   )
--"-"--
-"#;
+use info::{get_user, get_hostname, get_os_name, get_kernel_release, get_shell, get_window_manager, get_terminal};
+use printer::{colorize, print_owl, print_color_blocks, FOOTER_COLOR, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN};
 
 fn main() {
     let env_color = env::var("ANSI_COLOR").unwrap_or_else(|_| "".to_string());
     let default_os_color = if !env_color.is_empty() {
         env_color.clone()
     } else {
-        "\x1b[32m".to_string()
+        GREEN.to_string()
     };
 
-    let user_handle = thread::spawn(|| env::var("USER").unwrap_or_else(|_| "unknown_user".to_string()));
-    let hostname_handle = thread::spawn(||
-        StdCommand::new("hostname")
-            .output()
-            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
-            .unwrap_or_else(|_| "unknown_host".to_string())
-    );
-    let os_handle = thread::spawn(|| get_os_name());
-    let kernel_handle = thread::spawn(|| uname().map(|u| u.release).unwrap_or_else(|_| "Unknown kernel".to_string()));
-    let shell_handle = thread::spawn(||
-        env::var("SHELL")
-            .unwrap_or_else(|_| "Unknown shell".to_string())
-            .strip_prefix("/usr/bin/")
-            .unwrap_or("Unknown shell")
-            .to_string()
-    );
-    let wm_handle = thread::spawn(||
-        env::var("XDG_SESSION_DESKTOP")
-            .or_else(|_| get_window_manager_from_ps())
-            .unwrap_or_else(|_| "Unknown WM".to_string())
-    );
-    let term_handle = thread::spawn(||
-        env::var("TERM_PROGRAM")
-            .or_else(|_| env::var("TERM"))
-            .unwrap_or_else(|_| "Unknown terminal".to_string())
-    );
+    let user_handle = thread::spawn(get_user);
+    let hostname_handle = thread::spawn(get_hostname);
+    let os_handle = thread::spawn(get_os_name);
+    let kernel_handle = thread::spawn(get_kernel_release);
+    let shell_handle = thread::spawn(get_shell);
+    let wm_handle = thread::spawn(get_window_manager);
+    let term_handle = thread::spawn(get_terminal);
 
     let user = user_handle.join().unwrap();
     let hostname = hostname_handle.join().unwrap();
@@ -57,86 +30,16 @@ fn main() {
     let wm = wm_handle.join().unwrap();
     let terminal = term_handle.join().unwrap();
 
-    let title = format!("\x1b[31m{}@{}\x1b[0m", user, hostname);
-    let os_info = format!("{}OS\x1b[0m \x1b[37m{}", default_os_color, os_name);
-    let kernel_info = format!("\x1b[33mKernel\x1b[0m \x1b[37m{}", kernel_rel);
-    let shell_info = format!("\x1b[34mShell\x1b[0m \x1b[37m{}", shell);
-    let wm_info = format!("\x1b[35mWM\x1b[0m \x1b[37m{}", wm);
-    let terminal_info = format!("\x1b[36mTerminal\x1b[0m \x1b[37m{}", terminal);
+    let title = colorize(&format!("{}@{}", user, hostname), RED);
+    let os_info = colorize(&format!("OS {}", os_name), &default_os_color);
+    let kernel_info = colorize(&format!("Kernel {}", kernel_rel), YELLOW);
+    let shell_info = colorize(&format!("Shell {}", shell), BLUE);
+    let wm_info = colorize(&format!("WM {}", wm), MAGENTA);
+    let terminal_info = colorize(&format!("Terminal {}", terminal), CYAN);
 
-    print_owl(title, os_info, kernel_info, shell_info, wm_info, terminal_info);
+    print_owl(vec![title, os_info, kernel_info, shell_info, wm_info, terminal_info]);
     println!("{}", FOOTER_COLOR);
     print_color_blocks();
-}
-
-fn print_owl(title: String, os_info: String, kernel_info: String, shell_info: String, wm_info: String, terminal_info: String) {
-    let owl_lines = OWL_ART.lines().collect::<Vec<&str>>();
-    let info = vec![
-        (title, "\x1b[31m"),
-        (os_info, "\x1b[32m"),
-        (kernel_info, "\x1b[33m"),
-        (shell_info, "\x1b[34m"),
-        (wm_info, "\x1b[35m"),
-        (terminal_info, "\x1b[36m"),
-    ];
-
-    for (i, line) in owl_lines.iter().enumerate() {
-        if i < info.len() {
-            println!("{:<20} {}", line, format!("{}{}{}", info[i].1, info[i].0, RESET_COLOR));
-        } else {
-            println!("{}", line);
-        }
-    }
-}
-
-fn print_color_blocks() {
-    for i in 0..9 {
-        print!("\x1b[48;5;{}m   ", i);
-    }
-    print!("{}", RESET_COLOR);
-    println!();
-}
-
-fn get_window_manager_from_ps() -> Result<String, std::io::Error> {
-    if let Ok(wmctrl_output) = StdCommand::new("wmctrl")
-        .arg("-m")
-        .output() {
-        let wm_name = String::from_utf8_lossy(&wmctrl_output.stdout);
-        if !wm_name.is_empty() {
-            return Ok(wm_name.trim().to_string());
-        }
-    }
-
-    let output = StdCommand::new("ps")
-        .arg("ax")
-        .arg("-o")
-        .arg("comm=")
-        .stdout(Stdio::piped())
-        .output()?;
-
-    let wm_processes = vec![
-        "i3", "gnome-shell", "xfwm4", "kwin_x11", "awesome", "openbox", "sway", "bspwm", 
-        "xmonad", "cinnamon", "mate-session", "fluxbox", "dwm", "herbstluftwm", "stumpwm"
-    ];
-
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .find(|line| wm_processes.iter().any(|&wm| line.contains(wm)))
-        .map(|wm| wm.to_string())
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Window Manager not found"))
-}
-
-fn get_os_name() -> String {
-    if let Ok(content) = fs::read_to_string("/etc/os-release") {
-        for line in content.lines() {
-            if line.starts_with("PRETTY_NAME=") {
-                if let Some(name) = line.splitn(2, '=').nth(1) {
-                    return name.trim_matches('"').to_string();
-                }
-            }
-        }
-    }
-    "Linux".to_string()
 }
 
 #[cfg(test)]
@@ -150,11 +53,8 @@ mod tests {
     }
 
     #[test]
-    fn test_get_window_manager_from_ps() {
-        if let Ok(wm) = get_window_manager_from_ps() {
-            assert!(!wm.is_empty(), "Window manager should not be empty");
-        } else {
-            println!("Skipping window manager test in CI/CD");
-        }
+    fn test_get_window_manager() {
+        let wm = get_window_manager();
+        assert!(!wm.is_empty(), "Window manager should not be empty");
     }
 }

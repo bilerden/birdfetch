@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-uname = { version = "0.1.1", default-features = false }
+sys-info = "0.9.1"
 
 [profile.release]
 opt-level = "z"
