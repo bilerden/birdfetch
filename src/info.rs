@@ -1,8 +1,9 @@
 use std::env;
 use std::fs;
 use sys_info;
-use std::process::{Command as StdCommand, Stdio};
+use std::process::Command as StdCommand;
 use std::io;
+use std::{thread, time::Duration};
 
 /// Returns the current user name or a default placeholder.
 pub fn get_user() -> String {
@@ -58,7 +59,6 @@ fn get_window_manager_from_ps() -> Result<String, io::Error> {
         .arg("ax")
         .arg("-o")
         .arg("comm=")
-        .stdout(Stdio::piped())
         .output()?;
 
     let wm_processes = vec![
@@ -78,24 +78,19 @@ pub fn get_terminal() -> String {
     env::var("TERM_PROGRAM").or_else(|_| env::var("TERM")).unwrap_or_else(|_| "Unknown terminal".to_string())
 }
 
-/// Returns memory usage as used/total MB.
+/// Returns memory usage percentage (used/total * 100).
 pub fn get_mem_usage() -> String {
     match sys_info::mem_info() {
         Ok(mem) => {
-            let total_mb = mem.total / 1024;
-            let avail_mb = mem.avail / 1024;
-            let used_mb = total_mb - avail_mb;
-            format!("Mem {} / {} MB", used_mb, total_mb)
+            let used = mem.total.saturating_sub(mem.avail) as f64;
+            let total = mem.total as f64;
+            if total > 0.0 {
+                format!("{:.0}%", used / total * 100.0)
+            } else {
+                "Unknown".to_string()
+            }
         }
-        Err(_) => "Mem Unknown".to_string(),
-    }
-}
-
-/// Returns load average for 1, 5, and 15 minutes.
-pub fn get_load_avg() -> String {
-    match sys_info::loadavg() {
-        Ok(load) => format!("Load {:.2} {:.2} {:.2}", load.one, load.five, load.fifteen),
-        Err(_) => "Load Unknown".to_string(),
+        Err(_) => "Unknown".to_string(),
     }
 }
 
@@ -108,24 +103,69 @@ pub fn get_uptime() -> String {
                 let days = secs / 86400;
                 let hours = (secs % 86400) / 3600;
                 let mins = (secs % 3600) / 60;
-                return format!("Uptime {}d {:02}h {:02}m", days, hours, mins);
+                return format!("{}d {:02}h {:02}m", days, hours, mins);
             }
         }
     }
-    "Uptime Unknown".to_string()
+    "Unknown".to_string()
 }
 
-/// Returns disk usage as used/total GB.
+/// Returns disk usage as used percentage.
 pub fn get_disk_info() -> String {
     match sys_info::disk_info() {
         Ok(disk) => {
-            let total_gb = disk.total / (1024 * 1024);
-            let free_gb = disk.free / (1024 * 1024);
-            let used_gb = total_gb - free_gb;
-            format!("Disk {} / {} GB", used_gb, total_gb)
+            let used = (disk.total.saturating_sub(disk.free)) as f64;
+            let total = disk.total as f64;
+            if total > 0.0 {
+                format!("{:.0}%", used / total * 100.0)
+            } else {
+                "Unknown".to_string()
+            }
         }
-        Err(_) => "Disk Unknown".to_string(),
+        Err(_) => "Unknown".to_string(),
     }
+}
+
+/// Returns CPU usage percentage by sampling /proc/stat twice.
+pub fn get_cpu_usage() -> String {
+    let stat1 = fs::read_to_string("/proc/stat").unwrap_or_default();
+    let vals1: Vec<u64> = stat1
+        .lines()
+        .next()
+        .unwrap_or("")
+        .split_whitespace()
+        .skip(1)
+        .take(8)
+        .filter_map(|s| s.parse::<u64>().ok())
+        .collect();
+    if vals1.len() < 4 {
+        return "Unknown".to_string();
+    }
+    let idle1 = vals1[3] + vals1.get(4).cloned().unwrap_or(0);
+    let total1: u64 = vals1.iter().sum();
+    thread::sleep(Duration::from_millis(100));
+    let stat2 = fs::read_to_string("/proc/stat").unwrap_or_default();
+    let vals2: Vec<u64> = stat2
+        .lines()
+        .next()
+        .unwrap_or("")
+        .split_whitespace()
+        .skip(1)
+        .take(8)
+        .filter_map(|s| s.parse::<u64>().ok())
+        .collect();
+    if vals2.len() < 4 {
+        return "Unknown".to_string();
+    }
+    let idle2 = vals2[3] + vals2.get(4).cloned().unwrap_or(0);
+    let total2: u64 = vals2.iter().sum();
+    let diff_total = total2.saturating_sub(total1);
+    let diff_idle = idle2.saturating_sub(idle1);
+    if diff_total == 0 {
+        return "0%".to_string();
+    }
+    let usage = (diff_total - diff_idle) as f64 / diff_total as f64 * 100.0;
+    format!("{:.0}%", usage)
 }
 
 #[cfg(test)]
